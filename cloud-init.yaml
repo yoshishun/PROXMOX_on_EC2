@@ -1,8 +1,8 @@
 #cloud-config
 # パッケージのアップデートおよびアップグレード
-package_update: true
-package_upgrade: true
-package_reboot_if_required: false
+package_update: true                # apt update を実行する
+package_upgrade: true               # apt upgrade を実行する
+package_reboot_if_required: false   # パッケージのアップグレード後に再起動しないようにする
 
 # rootユーザーを無効にしない
 disable_root: false
@@ -11,13 +11,13 @@ disable_root: false
 hostname: proxmox
 fqdn: proxmox.local
 
-# デフォルトの「admin」Debianユーザーを無効にする
+# Debianのデフォルトユーザー（admin）を無効にする
 users: []
 
 # インストールするパッケージの指定
 packages:
- - dnsmasq
- - patch
+ - dnsmasq  # 小規模なDNS/DHCPサーバー。ローカルネットワーク内でのIPアドレス配布や名前解決を支援。
+ - patch    # ファイルに変更を加えるために使われるツール、ソースコードやテキストファイルにパッチを適用。
 
 # 指定されたファイルを書き込む
 write_files:
@@ -72,16 +72,37 @@ bootcmd:
 runcmd:
   - export DEBIAN_FRONTEND=noninteractive
   # Proxmoxのリポジトリを追加 (Debian 12/Bookworm用)
+  # 【引数内容】
+  #   deb：                                     Debian パッケージシステムのソースリストに追加する。
+  #   [arch=amd64]：                            amd64（64ビット）のアーキテクチャ専用リポジトリであることを示す。（arm64はProxmox公式でサポートしていない模様）
+  #   http://download.proxmox.com/debian/pve：  Proxmox VE のDebian用リポジトリのURL。
+  #   bookworm：                                Proxmoxに対応するDebian 12 のコードネーム（トイストーリーのキャラから名付けているらしい）
+  #   pve-no-subscription：                     Proxmox の無償版リポジトリを指定。
   - echo "deb [arch=amd64] http://download.proxmox.com/debian/pve bookworm pve-no-subscription" > /etc/apt/sources.list.d/pve-install-repo.list
+
+  # Proxmox VE のリリースキーをダウンロードして、APT に信頼されたキーとして追加する
+  # 【引数内容】
+  #   https://enterprise.proxmox.com/debian/proxmox-release-bookworm.gpg: Proxmoxのリリースキーを提供するURL。正当なリポジトリか確認するためにこのgpg鍵を使用。
+  #   /etc/apt/trusted.gpg.d:                                             APTが信頼するリポジトリの公開鍵を保存するディレクトリ。
   - wget https://enterprise.proxmox.com/debian/proxmox-release-bookworm.gpg -O /etc/apt/trusted.gpg.d/proxmox-release-bookworm.gpg
+
+  # パッケージの更新
   - apt update && apt full-upgrade -y
+
   - echo "postfix postfix/main_mailer_type string 'Internet Site'" | debconf-set-selections
-  # 古い設定ファイルを保持 (EC2のシリアルコンソールを壊さないため)
+
+  # 古い設定ファイルを保持 (EC2のシリアルコンソールを壊さないため)しつつ、パッケージのインストール
+  # 【引数内容】
   - apt install proxmox-ve postfix open-iscsi -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -y
+
   # ifupdown2を修正して、フックスクリプトに環境変数を渡せるようにする
+  # 【引数内容】
   - patch /usr/share/ifupdown2/ifupdown/scheduler.py /run/scheduler.patch && rm /run/scheduler.patch
+
   # ifupdown2が"ADDRFAM=inet,inet6"をpre-/post-hookに渡すので、それらを修正して対応する
   - sed -i'' -e 's/ inet6 / inet,inet6 /' /etc/network/if-pre-up.d/cloud_inet6 /etc/network/if-post-down.d/cloud_inet6
+
+
   # Proxmoxのifupdown2はsource-directoryをサポートしていないためsourceを使用し、vmbr0のためにゲストのNAT設定を追加
   - export LOCAL_NET_INTERFACE=$(ip -o link show | grep $(cloud-init query ds.meta_data.mac) | awk '{print $2}' | sed 's/:$//')
   - |
