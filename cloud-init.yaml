@@ -111,9 +111,16 @@ runcmd:
         post-up   iptables -t nat -A POSTROUTING -s '10.10.10.0/24' -o ${LOCAL_NET_INTERFACE} -j MASQUERADE
         post-down iptables -t nat -D POSTROUTING -s '10.10.10.0/24' -o ${LOCAL_NET_INTERFACE} -j MASQUERADE
     " > /etc/network/interfaces
+
+  # /etc/network/interfacesの設定適用
   - systemctl restart networking.service
+
+  # pveproxy の起動と自動起動設定ON
+  # 【引数内容】
+  #   pveproxy:   Proxmox VE（仮想化プラットフォーム）の管理用Webインターフェースを提供するためのプロキシサービス
   - systemctl start pveproxy
   - systemctl enable pveproxy
+
   # EC2インスタンスのプライベートIPを取得して /etc/hosts に追加
   - PRIVATE_IP=$(ip addr show ens5 | grep inet | awk '{ print $2 }' | cut -d'/' -f1 | head -n 1)
   - echo "$PRIVATE_IP proxmox" >> /etc/hosts
